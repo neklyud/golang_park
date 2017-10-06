@@ -1,16 +1,18 @@
 package main
 
 import (
-	"bytes"
+	"fmt"
+	//"bytes"
 	"os"
 	"path/filepath"
 	"strconv"
+	"io"
 )
 
 var x int = 0          //level counter
 var oldsep string = "" //last separator
 
-func dirTree(out *bytes.Buffer, paths string, printFiles bool) error {
+func dirTree(out io.Writer, paths string, printFiles bool) error {
 	var sep string                           //current separator
 	var sz int64                             //size of directory or file
 	sep1 := "|"                              //separators
@@ -40,37 +42,37 @@ func dirTree(out *bytes.Buffer, paths string, printFiles bool) error {
 		}
 		if !mode.IsDir() && printFiles == true { //file output
 			for j := 0; j < x; j++ {
-				out.WriteString("	")
+				fmt.Fprint(out,"	")
 				if oldsep == sep3 && j == x-2 {
 					sep1 = ""
 				}
 				if j != x-1 {
-					out.WriteString(sep1)
+					fmt.Fprint(out,sep1)
 				}
 			}
-			out.WriteString(sep + listDirFiles[i])
+			fmt.Fprint(out,sep + listDirFiles[i])
 			if listDirFiles[0] == "main.go" && paths == "." && i == 0 {
-				out.WriteString(" (vary)")
+				fmt.Fprint(out," (vary)")
 			} else {
-				out.WriteString(" (")
+				fmt.Fprint(out," (")
 				if sz != 0 {
-					out.WriteString(strconv.FormatInt(sz, 10))
-					out.WriteString("b")
+					fmt.Fprint(out,strconv.FormatInt(sz, 10))
+					fmt.Fprint(out,"b")
 				} else if sz == 0 {
-					out.WriteString("empty")
+					fmt.Fprint(out,"empty")
 				}
-				out.WriteString(")")
+				fmt.Fprint(out,")")
 			}
-			out.WriteString("\n")
+			fmt.Fprint(out,"\n")
 		} else if mode.IsDir() { //directory output
 			for j := 0; j < x; j++ {
-				out.WriteString("	")
+				fmt.Fprint(out,"	")
 				if j != x-1 {
-					out.WriteString(sep1)
+					fmt.Fprint(out,sep1)
 				}
 			}
-			out.WriteString(sep + listDirFiles[i])
-			out.WriteString("\n")
+			fmt.Fprint(out,sep + listDirFiles[i])
+			fmt.Fprint(out,"\n")
 			os.Chdir(listDirFiles[i])
 			x++ //level counter
 			oldsep = sep
@@ -82,7 +84,7 @@ func dirTree(out *bytes.Buffer, paths string, printFiles bool) error {
 	return err
 }
 func main() {
-	out := new(bytes.Buffer)
+	out := os.Stdin
 	if !(len(os.Args) == 2 || len(os.Args) == 3) {
 		panic("usage go run main.go . [-f]")
 	}
