@@ -10,118 +10,77 @@ import (
 	"time"
 )
 
-//func md5Calc(string data,chan interface {} in) chan out{
-//	in<-DataSignerMd5(data)
-//}
-func calcmd5(data string, md5 chan string, cancCh chan struct{}) {
-	res := DataSignerMd5(data)
-	md5 <- res
-	//fmt.Println(data + " Signer md5(data) " + res)
-}
-
-func calccrc32(data string, crc32 chan string, item string) {
-	res := DataSignerCrc32(data)
-	crc32 <- res
-	//fmt.Println(item + " Signer crc32(data) " + res)
-}
-
-func calccrc32md5(data chan string, crc32 chan string, item string) {
-	datastring := <-data
-	res := DataSignerCrc32(datastring)
-	crc32 <- res
-	//fmt.Println(item + " Signer crc32(md5(data)) " + res)
-}
-func concat(one chan string, two chan string, out chan interface{}) {
-	first := <-one
-	second := <-two
-	res := first + "~" + second
-	//fmt.Println(res)
-	out <- res
-}
 func SingleHash(in, out chan interface{}) {
 	var wg sync.WaitGroup
-	var md5 string
-	var crc32md5 string
-	var crc32 string
 	for val := range in {
+		var md5 string
+		var crc32md5 string
+		var crc32 string
 		item := strconv.Itoa(val.(int))
-		//fmt.Println(item + " Single data " + item)
 		md5 = DataSignerMd5(item)
+		wg1 := &sync.WaitGroup{}
 		wg.Add(1)
-
-		go func(item string) {
+		go func(item string, wg1 *sync.WaitGroup) {
 			defer wg.Done()
-			crc32 = DataSignerCrc32(item)
-		}(item)
-		wg.Add(1)
-		go func(item string) {
-			defer wg.Done()
-			crc32md5 = DataSignerCrc32(item)
-		}(md5)
-		wg.Wait()
-		res := crc32 + "~" + crc32md5
-		out <- res
-
-		//c := <-out
-		//fmt.Println(c)
+			wg1.Add(1)
+			go func(item string) {
+				defer wg1.Done()
+				crc32 = DataSignerCrc32(item)
+			}(item)
+			wg1.Add(1)
+			go func(item string) {
+				defer wg1.Done()
+				crc32md5 = DataSignerCrc32(item)
+			}(md5)
+			wg1.Wait()
+			res := crc32 + "~" + crc32md5
+			out <- res
+			//wg1.Wait()
+		}(item, wg1)
+		//wg1.Wait()
 	}
+	wg.Wait()
 }
-func MhtoCrc32(str string, out chan int, th int, in chan string) {
-	res := DataSignerCrc32(str)
-	in <- res
-	out <- th
+
+func Res(in string) string {
+	var wg sync.WaitGroup
+	st := make([]string, 6)
+	for index := range st {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			st[i] = DataSignerCrc32(strconv.Itoa(i) + in)
+			// fmt.Printf("%v MultiHash: crc32(th+step1)) %v %v\n", in, i, st[i])
+		}(index)
+	}
+	wg.Wait()
+	out := strings.Join(st, "")
+	// fmt.Printf("%v MultiHash result:\n %v\n", in, out)
+	return out
 }
 
 func MultiHash(in, out chan interface{}) {
-	for inp := range in { //Проход по записям типа 3553453453~45353453653
-		//output := make(chan int, 6)
-		s := inp.(string)
-		//fmt.Println(s)
-		go func(s string, out chan interface{}) {
-			output := make(chan int, 6)
-			ch1 := make(chan string, 6)
-			out1 := make(chan string, MaxInputDataLen)
-			mu := &sync.Mutex{}
-			mu1 := &sync.Mutex{}
-			mu2 := &sync.Mutex{}
+	var wg sync.WaitGroup
+	for data := range in {
+		//fmt.Println(data)
 
-			for th := 0; th < 6; th++ { //crc хеши
-				go MhtoCrc32(strconv.Itoa(th)+s, output, th, ch1)
-			}
-			go func(output chan int, ch chan string, out chan string, mu *sync.Mutex, mu1 *sync.Mutex) {
-				//mu1 := &sync.Mutex{}
-				for {
-					mu.Lock()
-					var counters = map[int]string{}
-					for i := 0; i < 6; i++ {
-						num := <-output
-						counters[num] = <-ch
-						//out <- counters[num]
-						fmt.Println(num, counters[num])
-					}
-					for i := 0; i < 6; i++ {
-						out <- counters[i]
-					}
-					mu.Unlock()
-				}
-			}(output, ch1, out1, mu, mu2)
-			mu1.Lock()
-			multRes := []string{<-out1, <-out1, <-out1, <-out1, <-out1, <-out1}
-			mResultAll := strings.Join(multRes, "")
-			fmt.Println(mResultAll)
-			out <- mResultAll
-			mu1.Unlock()
-		}(s, out)
+		wg.Add(1)
+
+		go func(data string) {
+			defer wg.Done()
+			out <- Res(data)
+		}(data.(string))
 	}
-} // CombineResults ...
+	wg.Wait()
+}
 func CombineResults(in, out chan interface{}) {
-	timer := time.NewTimer(2900 * time.Millisecond)
+	//timer := time.NewTimer(2900 * time.Millisecond)
 	sum := []string{}
 LOOP:
 	for {
 		select {
-		case <-timer.C: // Timeout expired
-			break LOOP
+		//	case <-timer.C: // Timeout expired
+		//		break LOOP
 		case res, ok := <-in:
 			//fmt.Println(res)
 			if !ok { // Channel closed
@@ -154,7 +113,7 @@ func ExecutePipeline(hSP ...job) {
 		}(in, out, work)
 		in = out
 	}
-	time.Sleep(2900 * time.Millisecond)
+	//time.Sleep(2900 * time.Millisecond)
 	wg.Wait()
 }
 func main() {
