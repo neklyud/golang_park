@@ -39,17 +39,29 @@ func concat(one chan string, two chan string, out chan interface{}) {
 	out <- res
 }
 func SingleHash(in, out chan interface{}) {
-	md5 := make(chan string, MaxInputDataLen)
-	crc32 := make(chan string, MaxInputDataLen)
-	crcmd5 := make(chan string, MaxInputDataLen)
-	cancCh := make(chan struct{}, 1)
-	for {
-		item := strconv.Itoa((<-in).(int))
+	var wg sync.WaitGroup
+	var md5 string
+	var crc32md5 string
+	var crc32 string
+	for val := range in {
+		item := strconv.Itoa(val.(int))
 		//fmt.Println(item + " Single data " + item)
-		calcmd5(item, md5, cancCh)
-		go calccrc32(item, crc32, item)
-		go calccrc32md5(md5, crcmd5, item)
-		go concat(crc32, crcmd5, out)
+		md5 = DataSignerMd5(item)
+		wg.Add(1)
+
+		go func(item string) {
+			defer wg.Done()
+			crc32 = DataSignerCrc32(item)
+		}(item)
+		wg.Add(1)
+		go func(item string) {
+			defer wg.Done()
+			crc32md5 = DataSignerCrc32(item)
+		}(md5)
+		wg.Wait()
+		res := crc32 + "~" + crc32md5
+		out <- res
+
 		//c := <-out
 		//fmt.Println(c)
 	}
@@ -124,19 +136,26 @@ LOOP:
 	sort.Strings(sum)
 	//fmt.Println(sum)
 	out <- strings.Join(sum, "_")
-	close(out)
+	//close(out)
 }
 
 //inputData := []int{0, 1}
 func ExecutePipeline(hSP ...job) {
+	var wg sync.WaitGroup
 	runtime.GOMAXPROCS(0)
-	in := make(chan interface{}, 1)
+	in := make(chan interface{}, 10)
 	for _, work := range hSP {
-		out := make(chan interface{}, 1)
-		go work(in, out)
+		wg.Add(1)
+		out := make(chan interface{}, 10)
+		go func(in, out chan interface{}, work job) {
+			defer wg.Done()
+			work(in, out)
+			close(out)
+		}(in, out, work)
 		in = out
 	}
 	time.Sleep(2900 * time.Millisecond)
+	wg.Wait()
 }
 func main() {
 	inputData := []int{0, 1, 1, 2, 3, 5, 8}
